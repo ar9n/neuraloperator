@@ -3,6 +3,7 @@ from .fno import FNO, FNO1d, FNO2d, FNO3d
 # only import SFNO if torch_harmonics is built locally
 try:
     from .sfno import SFNO
+    from .local_no import LocalNO
 except ModuleNotFoundError:
     pass
 from .uno import UNO
