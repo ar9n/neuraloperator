@@ -5,6 +5,8 @@ from timeit import default_timer
 from pathlib import Path
 from typing import Union
 import sys
+import matplotlib.pyplot as plt
+import numpy as np
 
 # Only import wandb and use if installed
 wandb_available = False
@@ -80,6 +82,12 @@ class Trainer:
                 self.autocast_device_type = "cpu"
         self.mixed_precision = mixed_precision
         self.data_processor = data_processor
+
+        # Store errors for plotting
+        self.train_time = 0
+        self.avg_loss = []
+        self.train_loss = []
+        self.eval_losses = {}
 
     def train(
         self,
@@ -181,12 +189,22 @@ class Trainer:
                 avg_lasso_loss=avg_lasso_loss,
                 epoch_train_time=epoch_train_time
             )
+
+            self.train_loss.append(train_err)
+            self.avg_loss.append(avg_loss)
+            self.train_time += epoch_train_time
             
             if epoch % self.eval_interval == 0:
                 # evaluate and gather metrics across each loader in test_loaders
                 eval_metrics = self.evaluate_all(epoch=epoch,
                                                 eval_losses=eval_losses,
                                                 test_loaders=test_loaders)
+                
+                for key, value in eval_metrics.items():
+                    if key in self.eval_losses:
+                        self.eval_losses[key].append(value)
+                    else:
+                        self.eval_losses[key] = [value]
 
                 epoch_metrics.update(**eval_metrics)
                 # save checkpoint if conditions are met
@@ -494,9 +512,10 @@ class Trainer:
 
         msg = f"[{epoch}] time={time:.2f}, "
         msg += f"avg_loss={avg_loss:.4f}, "
-        msg += f"train_err={train_err:.4f}"
+        msg += f"train_err={train_err:.4f}, "
         if avg_lasso_loss is not None:
-            msg += f", avg_lasso={avg_lasso_loss:.4f}"
+            msg += f"avg_lasso={avg_lasso_loss:.4f}, "
+        msg += f"learning_rate={lr:.4f}"
 
         print(msg)
         sys.stdout.flush()
@@ -590,4 +609,37 @@ class Trainer:
         if self.verbose:
             print(f"Saved training state to {save_dir}")
 
-       
+    def plot_losses(self):
+        # Extract values from evaluation_errors (convert tensors to numpy for plotting)
+        eval_losses_numpy = {
+            key: [val.cpu().numpy() for val in value] for key, value in self.eval_losses.items()
+        }
+
+        # Set up the figure
+        fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+
+        # 1. Plot for Train Error
+        ax.plot(range(len(self.avg_loss)), self.avg_loss, label='Training Loss', color='black')
+        
+        for i, (key, value) in enumerate(eval_losses_numpy.items()):
+            ax.plot(range(len(value)), value, label=key)
+
+        ax.set_title('Loss')
+        ax.set_xlabel('Epoch')
+        ax.legend()
+
+        # Show the plot
+        plt.tight_layout()
+        plt.show()
+
+    def training_losses(self):
+        return self.avg_loss
+    
+    def evaluation_losses(self, resolution):
+        eval_losses_numpy = {
+            key: [val.cpu().numpy() for val in value] for key, value in self.eval_losses.items()
+        }
+        return eval_losses_numpy[resolution]
+    
+    def training_time(self):
+        return self.train_time
