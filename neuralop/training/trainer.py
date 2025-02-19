@@ -19,6 +19,9 @@ try:
 except ModuleNotFoundError:
     wandb_available = False
 
+import json
+import datetime
+
 import neuralop.mpu.comm as comm
 from neuralop.losses import LpLoss
 from .training_state import load_training_state, save_training_state
@@ -34,6 +37,7 @@ class Trainer:
         model: nn.Module,
         n_epochs: int,
         wandb_log: bool=False,
+        json_log: bool=False,
         device: str='cpu',
         mixed_precision: bool=False,
         data_processor: nn.Module=None,
@@ -47,7 +51,6 @@ class Trainer:
         ----------
         model : nn.Module
         n_epochs : int
-        wandb_log : bool, default is False
             whether to log results to wandb
         device : torch.device, or str 'cpu' or 'cuda'
         mixed_precision : bool, default is False
@@ -70,6 +73,12 @@ class Trainer:
         self.wandb_log = False
         if wandb_available:
             self.wandb_log = (wandb_log and wandb.run is not None)
+        self.json_log = json_log
+        if self.json_log:
+            if self.model.json_log:
+                self.log_data = self.model.log_data
+            else:
+                self.log_data = {}
         self.eval_interval = eval_interval
         self.log_output = log_output
         self.verbose = verbose
@@ -89,17 +98,6 @@ class Trainer:
         # Track starting epoch for checkpointing/resuming
         self.start_epoch = 0
 
-        # Store errors for plotting
-        self.train_time = 0
-        self.avg_loss = []
-        self.train_loss = []
-        self.eval_losses = {}
-
-        # Store errors for plotting
-        self.train_time = 0
-        self.avg_loss = []
-        self.train_loss = []
-        self.eval_losses = {}
 
     def train(
         self,
@@ -114,6 +112,7 @@ class Trainer:
         save_best: int=None,
         save_dir: Union[str, Path]="./ckpt",
         resume_from_dir: Union[str, Path]=None,
+        goal_eval_loss: tuple[str, float]=None
     ):
         """Trains the given model on the given dataset.
 
@@ -146,6 +145,8 @@ class Trainer:
             if provided, resumes training state (model, 
             optimizer, regularizer, scheduler) from state saved in
             `resume_from_dir`
+        goal_eval_loss: [str, float], default None
+            if provided, stops training when evaluation loss (e.g. L5_h1) surpasses the specified value
         
         Returns
         -------
@@ -221,22 +222,12 @@ class Trainer:
                 avg_lasso_loss=avg_lasso_loss,
                 epoch_train_time=epoch_train_time
             )
-
-            self.train_loss.append(train_err)
-            self.avg_loss.append(avg_loss)
-            self.train_time += epoch_train_time
             
             if epoch % self.eval_interval == 0:
                 # evaluate and gather metrics across each loader in test_loaders
                 eval_metrics = self.evaluate_all(epoch=epoch,
                                                 eval_losses=eval_losses,
                                                 test_loaders=test_loaders)
-                
-                for key, value in eval_metrics.items():
-                    if key in self.eval_losses:
-                        self.eval_losses[key].append(value)
-                    else:
-                        self.eval_losses[key] = [value]
 
                 epoch_metrics.update(**eval_metrics)
                 # save checkpoint if conditions are met
@@ -249,7 +240,12 @@ class Trainer:
             if self.save_every is not None:
                 if epoch % self.save_every == 0:
                     self.checkpoint(save_dir)
-
+            
+            # terminates training if evaluation loss surpassed specified value
+            if goal_eval_loss is not None:
+                if self.log_data[goal_eval_loss[0]][-1] < goal_eval_loss[1]:
+                    break
+            
         return epoch_metrics
 
     def train_one_epoch(self, epoch, train_loader, training_loss):
@@ -546,7 +542,7 @@ class Trainer:
             learning rate at current epoch
         """
         # accumulate info to log to wandb
-        if self.wandb_log:
+        if self.wandb_log or self.json_log:
             values_to_log = dict(
                 train_err=train_err,
                 time=time,
@@ -568,6 +564,10 @@ class Trainer:
             wandb.log(data=values_to_log,
                       step=epoch+1,
                       commit=False)
+            
+        if self.json_log:
+            for key in values_to_log:
+                self.log_data.setdefault(key, []).append(values_to_log[key])
     
     def log_eval(self,
                  epoch: int,
@@ -589,7 +589,7 @@ class Trainer:
         for metric, value in eval_metrics.items():
             if isinstance(value, float) or isinstance(value, torch.Tensor):
                 msg += f"{metric}={value:.4f}, "
-            if self.wandb_log:
+            if self.wandb_log or self.json_log:
                 values_to_log[metric] = value       
         
         msg = f"Eval: " + msg[:-2] # cut off last comma+space
@@ -600,6 +600,10 @@ class Trainer:
             wandb.log(data=values_to_log,
                       step=epoch+1,
                       commit=True)
+            
+        if self.json_log:
+            for key in values_to_log:
+                self.log_data.setdefault(key, []).append(values_to_log[key].item())
 
     def resume_state_from_dir(self, save_dir):
         """
@@ -664,6 +668,16 @@ class Trainer:
             if self.verbose:
                 print(f"[Rank 0]: saved training state to {save_dir}")
 
+    def save_json_log(self, filename=None):
+        if self.model.json_log or self.json_log:
+            if filename is None:
+                json_path = "log_{}.json".format(datetime.datetime.now())
+            json_path = "logs/" + filename
+            with open(json_path, "w") as f:
+                json.dump(self.log_data, f, indent=2)
+            print("Logs saved in {}".format(json_path))
+
+    '''
     def plot_losses(self):
         # Extract values from evaluation_errors (convert tensors to numpy for plotting)
         eval_losses_numpy = {
@@ -698,3 +712,4 @@ class Trainer:
     
     def training_time(self):
         return self.train_time
+    '''

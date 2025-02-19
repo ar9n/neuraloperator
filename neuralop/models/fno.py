@@ -190,6 +190,7 @@ class FNO(BaseModel, name='FNO'):
         separable: bool=False,
         preactivation: bool=False,
         conv_module: nn.Module=SpectralConv,
+        json_log: bool=False,
         **kwargs
     ):
         
@@ -330,6 +331,21 @@ class FNO(BaseModel, name='FNO'):
         if self.complex_data:
             self.projection = ComplexValued(self.projection)
 
+        # Generate dict for json log
+        self.json_log = json_log            
+        if self.json_log:
+            self.log_data = {
+                "n_modes": n_modes,
+                "in_channels": in_channels,
+                "out_channels": out_channels,
+                "hidden_channels": hidden_channels,
+                "lifting_channels": self.lifting_channels,
+                "projection_channels": self.projection_channels,
+                "n_layers": n_layers,
+                "json_log": json_log
+            }
+
+
     def forward(self, x, output_shape=None, **kwargs):
         """FNO's forward pass
         
@@ -383,6 +399,13 @@ class FNO(BaseModel, name='FNO'):
         x = self.projection(x)
 
         return x
+    
+    def json_log(self):
+        if self.json_log:
+            with open("{}.json".format(datetime.datetime.now()), "w") as f:
+                json.dump(self.log_data, f)
+        else:
+            print("No log data available. Set json_log=True to activate.")
 
     @property
     def n_modes(self):
