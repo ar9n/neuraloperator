@@ -112,7 +112,8 @@ class Trainer:
         save_best: int=None,
         save_dir: Union[str, Path]="./ckpt",
         resume_from_dir: Union[str, Path]=None,
-        goal_eval_loss: tuple[str, float]=None
+        loss_goal: tuple[str, float]=None,
+        time_limit=None
     ):
         """Trains the given model on the given dataset.
 
@@ -145,8 +146,10 @@ class Trainer:
             if provided, resumes training state (model, 
             optimizer, regularizer, scheduler) from state saved in
             `resume_from_dir`
-        goal_eval_loss: [str, float], default None
-            if provided, stops training when evaluation loss (e.g. L5_h1) surpasses the specified value
+        loss_goal: [str, float], default None
+            if provided, stops training when metric (e.g. L5_h1) surpasses the specified value
+        time_limit: float, default None
+            if provided, stops training when the total epoch training time reaches the limit
         
         Returns
         -------
@@ -222,6 +225,8 @@ class Trainer:
                 avg_lasso_loss=avg_lasso_loss,
                 epoch_train_time=epoch_train_time
             )
+
+            print(torch.cuda.memory_allocated())
             
             if epoch % self.eval_interval == 0:
                 # evaluate and gather metrics across each loader in test_loaders
@@ -242,8 +247,12 @@ class Trainer:
                     self.checkpoint(save_dir)
             
             # terminates training if evaluation loss surpassed specified value
-            if goal_eval_loss is not None:
-                if self.log_data[goal_eval_loss[0]][-1] < goal_eval_loss[1]:
+            if loss_goal is not None:
+                if self.log_data[loss_goal[0]][-1] < loss_goal[1]:
+                    break
+
+            if time_limit is not None:
+                if sum(self.log_data["time"]) > time_limit:
                     break
             
         return epoch_metrics
