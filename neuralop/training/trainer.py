@@ -226,8 +226,6 @@ class Trainer:
                 epoch_train_time=epoch_train_time
             )
 
-            print(torch.cuda.memory_allocated())
-            
             if epoch % self.eval_interval == 0:
                 # evaluate and gather metrics across each loader in test_loaders
                 eval_metrics = self.evaluate_all(epoch=epoch,
@@ -281,15 +279,22 @@ class Trainer:
         self.model.train()
         if self.data_processor:
             self.data_processor.train()
-        t1 = default_timer()
         train_err = 0.0
+        memory_allocated = []
         
         # track number of training examples in batch
         self.n_samples = 0
 
+        t1 = default_timer()
+
         for idx, sample in enumerate(train_loader):
             
             loss = self.train_one_batch(idx, sample, training_loss)
+
+            # track allocated memory
+            if self.device == "cuda":
+                memory_allocated.append(torch.cuda.memory_allocated())
+
             loss.backward()
             self.optimizer.step()
 
@@ -305,6 +310,11 @@ class Trainer:
             self.scheduler.step()
 
         epoch_train_time = default_timer() - t1
+
+        if self.device == "cuda":
+            cuda_memory = np.mean(memory_allocated)
+        else:
+            cuda_memory = 0
 
         train_err /= len(train_loader)
         avg_loss /= self.n_samples
@@ -323,7 +333,8 @@ class Trainer:
                 avg_loss=avg_loss,
                 train_err=train_err,
                 avg_lasso_loss=avg_lasso_loss,
-                lr=lr
+                lr=lr,
+                cuda_memory=cuda_memory
             )
 
         return train_err, avg_loss, avg_lasso_loss, epoch_train_time
@@ -530,7 +541,8 @@ class Trainer:
             avg_loss: float,
             train_err: float,
             avg_lasso_loss: float=None,
-            lr: float=None
+            lr: float=None,
+            cuda_memory: int=None
             ):
         """Basic method to log results
         from a single training epoch. 
@@ -549,6 +561,8 @@ class Trainer:
             average lasso loss from regularizer, optional
         lr: float
             learning rate at current epoch
+        cuda_memory: int
+            allocated memory by CUDA in Byte (0 if device is not cuda)
         """
         # accumulate info to log to wandb
         if self.wandb_log or self.json_log:
@@ -557,14 +571,16 @@ class Trainer:
                 time=time,
                 avg_loss=avg_loss,
                 avg_lasso_loss=avg_lasso_loss,
-                lr=lr)
+                lr=lr,
+                cuda_memory=cuda_memory)
 
         msg = f"[{epoch}] time={time:.2f}, "
         msg += f"avg_loss={avg_loss:.4f}, "
         msg += f"train_err={train_err:.4f}, "
         if avg_lasso_loss is not None:
             msg += f"avg_lasso={avg_lasso_loss:.4f}, "
-        msg += f"learning_rate={lr:.4f}"
+        msg += f"learning_rate={lr:.4f}, "
+        msg += f"cuda_memory={torch.cuda.memory_allocated()/1e+6:.1f} MB"
 
         print(msg)
         sys.stdout.flush()
@@ -685,40 +701,3 @@ class Trainer:
             with open(json_path, "w") as f:
                 json.dump(self.log_data, f, indent=2)
             print("Logs saved in {}".format(json_path))
-
-    '''
-    def plot_losses(self):
-        # Extract values from evaluation_errors (convert tensors to numpy for plotting)
-        eval_losses_numpy = {
-            key: [val.cpu().numpy() for val in value] for key, value in self.eval_losses.items()
-        }
-
-        # Set up the figure
-        fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-
-        # 1. Plot for Train Error
-        ax.plot(range(len(self.avg_loss)), self.avg_loss, label='Training Loss', color='black')
-        
-        for i, (key, value) in enumerate(eval_losses_numpy.items()):
-            ax.plot(range(len(value)), value, label=key)
-
-        ax.set_title('Loss')
-        ax.set_xlabel('Epoch')
-        ax.legend()
-
-        # Show the plot
-        plt.tight_layout()
-        plt.show()
-
-    def training_losses(self):
-        return self.avg_loss
-    
-    def evaluation_losses(self, resolution):
-        eval_losses_numpy = {
-            key: [val.cpu().numpy() for val in value] for key, value in self.eval_losses.items()
-        }
-        return eval_losses_numpy[resolution]
-    
-    def training_time(self):
-        return self.train_time
-    '''
