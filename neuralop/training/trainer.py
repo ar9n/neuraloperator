@@ -113,7 +113,8 @@ class Trainer:
         save_dir: Union[str, Path]="./ckpt",
         resume_from_dir: Union[str, Path]=None,
         loss_goal: tuple[str, float]=None,
-        time_limit=None
+        time_limit=None,
+        lr_limit=None
     ):
         """Trains the given model on the given dataset.
 
@@ -150,6 +151,8 @@ class Trainer:
             if provided, stops training when metric (e.g. L5_h1) surpasses the specified value
         time_limit: float, default None
             if provided, stops training when the total epoch training time reaches the limit
+        lr_limit: float, default None
+            if provided, stops training when the learning rate falls below lr_limit
         
         Returns
         -------
@@ -244,14 +247,27 @@ class Trainer:
                 if epoch % self.save_every == 0:
                     self.checkpoint(save_dir)
             
+            stop_training = False
             # terminates training if evaluation loss surpassed specified value
             if loss_goal is not None:
                 if self.log_data[loss_goal[0]][-1] < loss_goal[1]:
-                    break
+                    stop_training = True
 
             if time_limit is not None:
                 if sum(self.log_data["time"]) > time_limit:
-                    break
+                    stop_training = True
+
+            if lr_limit is not None:
+                for pg in self.optimizer.param_groups:
+                    lr = pg["lr"]
+                if lr < lr_limit:
+                    stop_training = True
+
+            if stop_training:
+                eval_metrics = self.evaluate_all(epoch=epoch,
+                                                eval_losses=eval_losses,
+                                                test_loaders=test_loaders)
+                epoch_metrics.update(**eval_metrics)
             
         return epoch_metrics
 
@@ -694,10 +710,12 @@ class Trainer:
                 print(f"[Rank 0]: saved training state to {save_dir}")
 
     def save_json_log(self, filename=None):
-        if self.model.json_log or self.json_log:
+        if self.json_log:
             if filename is None:
                 json_path = "log_{}.json".format(datetime.datetime.now())
             json_path = "logs/" + filename
             with open(json_path, "w") as f:
                 json.dump(self.log_data, f, indent=2)
             print("Logs saved in {}".format(json_path))
+        else: 
+            print("JSON Logs not available. Set json_log=True when defining the trainer.")
