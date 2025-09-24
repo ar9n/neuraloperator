@@ -134,6 +134,7 @@ class UNO(nn.Module):
         domain_padding=None,
         domain_padding_mode="one-sided",
         verbose=False,
+        json_log: bool=False,
         **kwargs
     ):
         super().__init__()
@@ -305,6 +306,21 @@ class UNO(nn.Module):
             non_linearity=non_linearity,
         )
 
+        # Generate dict for json log
+        self.json_log = json_log            
+        if self.json_log:
+            self.log_data = {
+                "in_channels": in_channels,
+                "out_channels": out_channels,
+                "hidden_channels": hidden_channels,
+                "lifting_channels": self.lifting_channels,
+                "projection_channels": self.projection_channels,
+                "uno_n_modes": uno_n_modes,
+                "uno_scalings": uno_scalings,
+                "n_layers": n_layers,
+                "json_log": json_log
+            }
+
     def forward(self, x, **kwargs):
         if self.positional_embedding is not None:
             x = self.positional_embedding(x)
@@ -347,3 +363,10 @@ class UNO(nn.Module):
 
         x = self.projection(x)
         return x
+    
+    def json_log(self):
+        if self.json_log:
+            with open("{}.json".format(datetime.datetime.now()), "w") as f:
+                json.dump(self.log_data, f)
+        else:
+            print("No log data available. Set json_log=True to activate.")
