@@ -268,6 +268,7 @@ class Trainer:
                                                 eval_losses=eval_losses,
                                                 test_loaders=test_loaders)
                 epoch_metrics.update(**eval_metrics)
+                break
             
         return epoch_metrics
 
