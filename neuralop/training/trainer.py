@@ -29,7 +29,32 @@ from .training_state import load_training_state, save_training_state
 
 class Trainer:
     """
-    A general Trainer class to train neural-operators on given datasets
+    A general Trainer class to train neural-operators on given datasets. 
+
+    .. note ::
+        Our Trainer expects datasets to provide batches as key-value dictionaries, ex.: 
+        ``{'x': x, 'y': y}``, that are keyed to the arguments expected by models and losses. 
+        For specifics and an example, check ``neuralop.data.datasets.DarcyDataset``. 
+
+    Parameters
+    ----------
+    model : nn.Module
+    n_epochs : int
+    wandb_log : bool, default is False
+        whether to log results to wandb
+    device : torch.device, or str 'cpu' or 'cuda'
+    mixed_precision : bool, default is False
+        whether to use torch.autocast to compute mixed precision
+    data_processor : DataProcessor class to transform data, default is None
+        if not None, data from the loaders is transform first with data_processor.preprocess,
+        then after getting an output from the model, that is transformed with data_processor.postprocess.
+    eval_interval : int, default is 1
+        how frequently to evaluate model and log training stats
+    log_output : bool, default is False
+        if True, and if wandb_log is also True, log output images to wandb
+    use_distributed : bool, default is False
+        whether to use DDP
+    verbose : bool, default is False
     """
     def __init__(
         self,
@@ -47,24 +72,6 @@ class Trainer:
         verbose: bool=False,
     ):
         """
-        Parameters
-        ----------
-        model : nn.Module
-        n_epochs : int
-            whether to log results to wandb
-        device : torch.device, or str 'cpu' or 'cuda'
-        mixed_precision : bool, default is False
-            whether to use torch.autocast to compute mixed precision
-        data_processor : DataProcessor class to transform data, default is None
-            if not None, data from the loaders is transform first with data_processor.preprocess,
-            then after getting an output from the model, that is transformed with data_processor.postprocess.
-        eval_interval : int, default is 1
-            how frequently to evaluate model and log training stats
-        log_output : bool, default is False
-            if True, and if wandb_log is also True, log output images to wandb
-        use_distributed : bool, default is False
-            whether to use DDP
-        verbose : bool, default is False
         """
 
         self.model = model
@@ -710,13 +717,4 @@ class Trainer:
             if self.verbose:
                 print(f"[Rank 0]: saved training state to {save_dir}")
 
-    def save_json_log(self, filename=None):
-        if self.json_log:
-            if filename is None:
-                json_path = "log_{}.json".format(datetime.datetime.now())
-            json_path = "logs/" + filename
-            with open(json_path, "w") as f:
-                json.dump(self.log_data, f, indent=2)
-            print("Logs saved in {}".format(json_path))
-        else: 
-            print("JSON Logs not available. Set json_log=True when defining the trainer.")
+       
