@@ -407,6 +407,9 @@ class FNO(BaseModel, name='FNO'):
         else:
             print("No log data available. Set json_log=True to activate.")
 
+    def extract_weights(self,layer=0):
+        return self.fno_blocks.convs[layer].weight
+
     @property
     def n_modes(self):
         return self._n_modes
