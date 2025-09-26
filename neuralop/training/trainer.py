@@ -42,6 +42,8 @@ class Trainer:
     n_epochs : int
     wandb_log : bool, default is False
         whether to log results to wandb
+    json_log: bool, default is False
+        whether to log results to json
     device : torch.device, or str 'cpu' or 'cuda'
     mixed_precision : bool, default is False
         whether to use torch.autocast to compute mixed precision
@@ -717,4 +719,25 @@ class Trainer:
             if self.verbose:
                 print(f"[Rank 0]: saved training state to {save_dir}")
 
+
+    def save_json_log(self, filename=None):
+        """save_json_log saves log data in a json file if json_log=True
+
+        Parameters
+        ----------
+        filename : str
+            name of json log file
+        """
+        if self.json_log:
+            if filename is None:
+                json_path = "log_{}.json".format(datetime.datetime.now())
+            json_path = "logs/" + filename
+
+            with open(json_path, "w") as f:
+                json.dump(self.log_data, f, indent=2)
+
+            print("Logs saved in {}".format(json_path))
+
+        else: 
+            print("JSON Logs not available. Set json_log=True when defining the trainer.")
        
