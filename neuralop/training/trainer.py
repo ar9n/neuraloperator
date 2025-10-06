@@ -273,10 +273,10 @@ class Trainer:
                     stop_training = True
 
             if stop_training:
-                eval_metrics = self.evaluate_all(epoch=epoch,
-                                                eval_losses=eval_losses,
-                                                test_loaders=test_loaders)
-                epoch_metrics.update(**eval_metrics)
+                #eval_metrics = self.evaluate_all(epoch=epoch,
+                #                                eval_losses=eval_losses,
+                #                                test_loaders=test_loaders)
+                #epoch_metrics.update(**eval_metrics)
                 break
             
         return epoch_metrics
